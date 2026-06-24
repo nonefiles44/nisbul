@@ -608,66 +608,47 @@
 
       const { lat, lng } = selectedLatLng;
       const radius = parseInt(radiusSlider.value);
-      const categoryValue = categorySelect.value; // örn: "amenity=cafe"
+      const categoryValue = categorySelect.value;
 
-      // "amenity=cafe" → key: "amenity", value: "cafe"
       const [key, value] = categoryValue.split('=');
 
-      // Overpass QL sorgusu: node + way + relation
-      // Hem node hem de way tipindeki yerleri sorgula
-      const query = `
-        [out:json][timeout:25];
-        (
-          node(around:${radius},${lat},${lng})["${key}"="${value}"];
-          way(around:${radius},${lat},${lng})["${key}"="${value}"];
-        );
-        out tags center;
-      `;
+      // Tek satır sorgu — GET parametresi olarak gönderilecek
+      const query = `[out:json][timeout:25];(node(around:${radius},${lat},${lng})["${key}"="${value}"];way(around:${radius},${lat},${lng})["${key}"="${value}"];);out tags center;`;
 
-      // Birden fazla Overpass mirror — CORS sorunu yaşanırsa sıradakini dene
+      // CORS ÇÖZÜMÜ: POST + özel header yerine GET + ?data= parametresi kullan.
+      // Bu yöntemde tarayıcı "simple request" olarak değerlendirir,
+      // preflight (OPTIONS) isteği göndermez → CORS engeli aşılır.
       const MIRRORS = [
         'https://overpass-api.de/api/interpreter',
         'https://overpass.kumi.systems/api/interpreter',
-        'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+        'https://overpass.openstreetmap.ru/api/interpreter',
       ];
 
-      // Yükleme durumunu başlat
       setLoading(true);
       hideError();
       clearResultMarkers();
 
-      let lastError;
       let success = false;
 
-      // Her mirror'ı sırayla dene, biri çalışırsa dur
-      for (const url of MIRRORS) {
+      for (const baseUrl of MIRRORS) {
         try {
-          const response = await fetch(url, {
-            method: 'POST',
-            body: query,
-            headers: { 'Content-Type': 'text/plain' }
-          });
+          const url = baseUrl + '?data=' + encodeURIComponent(query);
+          const response = await fetch(url, { method: 'GET' });
 
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
           const data = await response.json();
           renderResults(data.elements, key, value);
           success = true;
-          break; // Başarılı — döngüden çık
+          break;
 
         } catch (err) {
-          lastError = err;
-          // Bu mirror çalışmadı, bir sonrakini dene
+          // Bu mirror çalışmadı, sıradakini dene
         }
       }
 
       if (!success) {
-        showError(
-          'Tüm Overpass sunucularına erişilemedi. ' +
-          'Eğer dosyayı doğrudan açıyorsanız (file://) bu normal bir güvenlik kısıtlamasıdır. ' +
-          'Çözüm: terminalde "python -m http.server 8000" komutunu çalıştırın, ' +
-          'ardından tarayıcıda http://localhost:8000 adresini açın.'
-        );
+        showError('Overpass sunucularına erişilemedi. Lütfen birkaç saniye bekleyip tekrar deneyin.');
       }
 
       setLoading(false);
