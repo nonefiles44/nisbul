@@ -1,0 +1,12 @@
+# OS dosyaları
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor klasörleri
+.vscode/
+.idea/
+
+# Geçici dosyalar
+*.log
+*.tmp

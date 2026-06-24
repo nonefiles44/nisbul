@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NişBul — Yakınımdaki İşletmeler</title>
+
+  <!-- Leaflet.js CSS ve JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Google Fonts: Syne (başlık) + Inter (gövde) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ===== TASARIM SİSTEMİ: TOKEN'LAR ===== */
+    :root {
+      --bg:        #0d1117;       /* Ana arka plan */
+      --surface:   #161b22;       /* Panel arka planı */
+      --border:    #21262d;       /* Kenarlık */
+      --accent:    #00d4aa;       /* Imza rengi: parlak teal */
+      --accent-dim:#00d4aa22;     /* Şeffaf accent */
+      --text:      #e6edf3;       /* Birincil metin */
+      --muted:     #8b949e;       /* İkincil metin */
+      --danger:    #f85149;       /* Hata rengi */
+      --font-head: 'Syne', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --radius:    12px;
+      --radius-sm: 8px;
+    }
+
+    /* ===== RESET & TEMEL ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: grid;
+      /* Sol panel + harita yan yana, alt tablo tam genişlik */
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas:
+        "header  header"
+        "panel   map"
+        "table   table";
+      overflow: hidden;
+    }
+
+    /* ===== HEADER ===== */
+    header {
+      grid-area: header;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 1000;
+    }
+
+    /* İmza: Logo ikonu pulse animasyonu */
+    .logo-dot {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .logo-dot::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      animation: pulse 2s ease-out infinite;
+    }
+    @keyframes pulse {
+      0%   { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.8); }
+    }
+
+    header h1 {
+      font-family: var(--font-head);
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    header h1 span { color: var(--accent); }
+
+    header p {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* ===== SOL KONTROL PANELİ ===== */
+    #panel {
+      grid-area: panel;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      overflow-y: auto;
+    }
+
+    .control-group label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    /* Kategori seçici */
+    select {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      transition: border-color 0.2s;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+
+    /* Radius slider */
+    .slider-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .slider-value-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #radius-display {
+      font-family: var(--font-head);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    #radius-display span { font-size: 0.75rem; color: var(--muted); font-family: var(--font-body); }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--bg);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+      transition: box-shadow 0.2s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      box-shadow: 0 0 0 6px var(--accent-dim);
+    }
+
+    /* Konum bilgisi kutusu */
+    #location-info {
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      color: var(--accent);
+      display: none; /* Başlangıçta gizli, konum seçilince gösterilir */
+    }
+    #location-info.visible { display: block; }
+    #location-info strong { display: block; font-size: 0.7rem; margin-bottom: 2px; color: var(--muted); }
+
+    /* Arama Butonu */
+    #search-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #0d1117;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-head);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: opacity 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #search-btn:hover:not(:disabled) { opacity: 0.9; }
+    #search-btn:active:not(:disabled) { transform: scale(0.98); }
+    #search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Spinner — yükleme animasyonu */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(13,17,23,0.3);
+      border-top-color: #0d1117;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #search-btn.loading .spinner { display: block; }
+    #search-btn.loading .btn-text::before { content: 'Aranıyor...'; }
+    #search-btn:not(.loading) .btn-text::before { content: 'İşletmeleri Bul'; }
+
+    /* Hata mesajı */
+    #error-msg {
+      display: none;
+      background: #f851491a;
+      border: 1px solid var(--danger);
+      color: var(--danger);
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    #error-msg.visible { display: block; }
+
+    /* Panel alt bilgi */
+    .panel-footer {
+      margin-top: auto;
+      font-size: 0.7rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .panel-footer a { color: var(--accent); text-decoration: none; }
+
+    /* ===== HARİTA ALANI ===== */
+    #map {
+      grid-area: map;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+    }
+
+    /* Leaflet popup özelleştirme */
+    .leaflet-popup-content-wrapper {
+      background: var(--surface) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-sm) !important;
+      color: var(--text) !important;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
+    }
+    .leaflet-popup-tip { background: var(--surface) !important; }
+    .leaflet-popup-content { margin: 12px 16px !important; }
+    .popup-name { font-family: var(--font-head); font-size: 0.95rem; font-weight: 600; }
+    .popup-type { font-size: 0.75rem; color: var(--accent); margin-top: 2px; }
+    .popup-addr { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+
+    /* Leaflet attribution rengi */
+    .leaflet-control-attribution { background: rgba(13,17,23,0.8) !important; color: var(--muted) !important; }
+    .leaflet-control-attribution a { color: var(--accent) !important; }
+
+    /* ===== ALT SONUÇ TABLOSU ===== */
+    #table-section {
+      grid-area: table;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      max-height: 280px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #table-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #table-header h2 {
+      font-family: var(--font-head);
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #result-count {
+      background: var(--accent);
+      color: #0d1117;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    #table-hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    #table-scroll {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 8px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      z-index: 1;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: var(--accent-dim); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody td {
+      padding: 9px 16px;
+      color: var(--text);
+      vertical-align: middle;
+    }
+    td.name { font-weight: 500; }
+    td.category {
+      color: var(--accent);
+      font-size: 0.75rem;
+    }
+    td.muted { color: var(--muted); }
+
+    /* Boş durum mesajı */
+    .empty-state {
+      padding: 32px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+    .empty-state .icon { font-size: 2rem; margin-bottom: 8px; }
+
+    /* ===== MOBİL UYUM ===== */
+    @media (max-width: 768px) {
+      body {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto 320px auto;
+        grid-template-areas:
+          "header"
+          "panel"
+          "map"
+          "table";
+        overflow-y: auto;
+        height: auto;
+        min-height: 100vh;
+      }
+      #panel {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 16px;
+        gap: 16px;
+      }
+      #table-section { max-height: 300px; }
+      header p { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header>
+    <div class="logo-dot"></div>
+    <h1>Niş<span>Bul</span></h1>
+    <p>OpenStreetMap · Overpass API</p>
+  </header>
+
+  <!-- file:// protokol uyarı banner'ı — JS ile gösterilir/gizlenir -->
+  <div id="cors-banner" style="
+    display:none;
+    position:fixed;
+    top:0;left:0;right:0;
+    z-index:9999;
+    background:#f85149;
+    color:white;
+    font-family:'Inter',sans-serif;
+    font-size:0.8rem;
+    padding:10px 20px;
+    text-align:center;
+    line-height:1.6;
+  ">
+    ⚠️ <strong>file:// protokolü tespit edildi.</strong>
+    Bu modda Overpass API çalışmaz (CORS kısıtlaması).
+    Terminalde <code style="background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:4px">python -m http.server 8000</code> çalıştırın →
+    <a href="http://localhost:8000" style="color:white;font-weight:600">http://localhost:8000</a> adresini açın.
+    &nbsp;<button onclick="document.getElementById('cors-banner').style.display='none'"
+      style="background:rgba(255,255,255,0.2);border:none;color:white;cursor:pointer;padding:2px 8px;border-radius:4px">✕</button>
+  </div>
+
+  <!-- ===== SOL KONTROL PANELİ ===== -->
+  <aside id="panel">
+
+    <!-- Kategori seçici -->
+    <div class="control-group">
+      <label>İşletme Kategorisi</label>
+      <select id="category-select">
+        <option value="amenity=cafe">☕ Kafe</option>
+        <option value="amenity=restaurant">🍽️ Restoran</option>
+        <option value="amenity=pharmacy">💊 Eczane</option>
+        <option value="shop=supermarket">🛒 Süpermarket</option>
+        <option value="amenity=hospital">🏥 Hastane</option>
+        <option value="amenity=bank">🏦 Banka</option>
+        <option value="amenity=fuel">⛽ Benzin İstasyonu</option>
+        <option value="amenity=school">🏫 Okul</option>
+        <option value="amenity=dentist">🦷 Diş Hekimi</option>
+        <option value="shop=bakery">🥖 Fırın</option>
+        <option value="leisure=fitness_centre">💪 Spor Salonu</option>
+        <option value="amenity=bar">🍺 Bar</option>
+        <option value="healthcare=psychotherapist">🧠 Psikolog / Psikoterapist</option>
+      </select>
+    </div>
+
+    <!-- Yarıçap slider'ı -->
+    <div class="control-group">
+      <label>Arama Yarıçapı</label>
+      <div class="slider-wrapper">
+        <div class="slider-value-row">
+          <div id="radius-display">500 <span>metre</span></div>
+          <span style="font-size:0.7rem;color:var(--muted)">100m — 5km</span>
+        </div>
+        <input type="range" id="radius-slider" min="100" max="5000" step="50" value="500" />
+      </div>
+    </div>
+
+    <!-- Seçilen konum bilgisi -->
+    <div id="location-info">
+      <strong>📍 SEÇİLEN NOKTA</strong>
+      <span id="coord-text">—</span>
+    </div>
+
+    <!-- Arama butonu -->
+    <button id="search-btn" disabled>
+      <div class="spinner"></div>
+      <span class="btn-text"></span>
+    </button>
+
+    <!-- Hata mesajı -->
+    <div id="error-msg"></div>
+
+    <!-- Panel alt bilgisi -->
+    <div class="panel-footer">
+      Haritaya tıklayarak merkez noktanızı seçin, sonra arama yapın.<br><br>
+      Veriler <a href="https://www.openstreetmap.org" target="_blank">OpenStreetMap</a> katkıcılarına aittir,
+      <a href="https://overpass-api.de" target="_blank">Overpass API</a> üzerinden çekilmektedir.
+    </div>
+
+  </aside>
+
+  <!-- ===== HARİTA ===== -->
+  <div id="map"></div>
+
+  <!-- ===== SONUÇ TABLOSU ===== -->
+  <section id="table-section">
+    <div id="table-header">
+      <h2>
+        Sonuçlar
+        <span id="result-count" style="display:none">0</span>
+      </h2>
+      <span id="table-hint">Arama yapmak için haritaya tıklayın</span>
+    </div>
+    <div id="table-scroll">
+      <div class="empty-state">
+        <div class="icon">🗺️</div>
+        Haritada bir nokta seçin ve arama başlatın
+      </div>
+    </div>
+  </section>
+
+
+  <script>
+    /* ============================================================
+       NişBul — Ana Uygulama Mantığı
+       Leaflet.js harita + Overpass API entegrasyonu
+    ============================================================ */
+
+    // ---- DURUM DEĞİŞKENLERİ ----------------------------------------
+    let map;               // Leaflet harita nesnesi
+    let centerMarker;      // Kullanıcının seçtiği merkez marker
+    let radiusCircle;      // Yarıçap çemberi
+    let resultMarkers = []; // Sonuç işletme marker'ları (sıfırlamak için)
+    let selectedLatLng;    // Seçilen koordinatlar { lat, lng }
+
+    // ---- DOM REFERANSLARI -------------------------------------------
+    const categorySelect  = document.getElementById('category-select');
+    const radiusSlider    = document.getElementById('radius-slider');
+    const radiusDisplay   = document.getElementById('radius-display');
+    const locationInfo    = document.getElementById('location-info');
+    const coordText       = document.getElementById('coord-text');
+    const searchBtn       = document.getElementById('search-btn');
+    const errorMsg        = document.getElementById('error-msg');
+    const tableScroll     = document.getElementById('table-scroll');
+    const resultCount     = document.getElementById('result-count');
+    const tableHint       = document.getElementById('table-hint');
+
+    // ---- HARİTAYI BAŞLAT -------------------------------------------
+    function initMap() {
+      // Harita: Türkiye / Ankara koordinatları, zoom 13
+      map = L.map('map', { zoomControl: true }).setView([39.9334, 32.8597], 13);
+
+      // OpenStreetMap karanlık temalı tile katmanı (CartoDB Dark Matter)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıcıları &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20
+      }).addTo(map);
+
+      // Harita tıklama olayı — merkez seç
+      map.on('click', onMapClick);
+    }
+
+    // ---- HARİTAYA TIKLANDIGNDA ------------------------------------
+    function onMapClick(e) {
+      selectedLatLng = e.latlng;
+      const { lat, lng } = selectedLatLng;
+
+      // Eski merkez marker ve çemberi kaldır
+      if (centerMarker) map.removeLayer(centerMarker);
+      if (radiusCircle)  map.removeLayer(radiusCircle);
+
+      // Yeni merkez marker: pulse efektli özel ikon
+      const centerIcon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width:16px;height:16px;
+          background:var(--accent);
+          border-radius:50%;
+          border:2px solid white;
+          box-shadow:0 0 0 4px rgba(0,212,170,0.3);
+        "></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      centerMarker = L.marker([lat, lng], { icon: centerIcon }).addTo(map);
+
+      // Yarıçap çemberi — şeffaf teal doldurma
+      const radius = parseInt(radiusSlider.value);
+      radiusCircle = L.circle([lat, lng], {
+        radius: radius,
+        color: '#00d4aa',
+        fillColor: '#00d4aa',
+        fillOpacity: 0.05,
+        weight: 1.5,
+        dashArray: '5, 5'
+      }).addTo(map);
+
+      // Konum bilgisini güncelle
+      coordText.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      locationInfo.classList.add('visible');
+
+      // Arama butonunu aktif et
+      searchBtn.disabled = false;
+      hideError();
+    }
+
+    // ---- SLIDER DEĞİŞİKLİĞİ: Çemberi dinamik güncelle ------------
+    radiusSlider.addEventListener('input', () => {
+      const val = parseInt(radiusSlider.value);
+      // Metni güncelle (span etiketini koruyarak)
+      radiusDisplay.innerHTML = `${val} <span>metre</span>`;
+
+      // Haritada çember varsa boyutunu güncelle
+      if (radiusCircle) {
+        radiusCircle.setRadius(val);
+      }
+    });
+
+    // ---- OVERPASS API SORGUSU -------------------------------------
+    async function fetchBusinesses() {
+      if (!selectedLatLng) return;
+
+      const { lat, lng } = selectedLatLng;
+      const radius = parseInt(radiusSlider.value);
+      const categoryValue = categorySelect.value; // örn: "amenity=cafe"
+
+      // "amenity=cafe" → key: "amenity", value: "cafe"
+      const [key, value] = categoryValue.split('=');
+
+      // Overpass QL sorgusu: node + way + relation
+      // Hem node hem de way tipindeki yerleri sorgula
+      const query = `
+        [out:json][timeout:25];
+        (
+          node(around:${radius},${lat},${lng})["${key}"="${value}"];
+          way(around:${radius},${lat},${lng})["${key}"="${value}"];
+        );
+        out tags center;
+      `;
+
+      // Birden fazla Overpass mirror — CORS sorunu yaşanırsa sıradakini dene
+      const MIRRORS = [
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+      ];
+
+      // Yükleme durumunu başlat
+      setLoading(true);
+      hideError();
+      clearResultMarkers();
+
+      let lastError;
+      let success = false;
+
+      // Her mirror'ı sırayla dene, biri çalışırsa dur
+      for (const url of MIRRORS) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            body: query,
+            headers: { 'Content-Type': 'text/plain' }
+          });
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const data = await response.json();
+          renderResults(data.elements, key, value);
+          success = true;
+          break; // Başarılı — döngüden çık
+
+        } catch (err) {
+          lastError = err;
+          // Bu mirror çalışmadı, bir sonrakini dene
+        }
+      }
+
+      if (!success) {
+        showError(
+          'Tüm Overpass sunucularına erişilemedi. ' +
+          'Eğer dosyayı doğrudan açıyorsanız (file://) bu normal bir güvenlik kısıtlamasıdır. ' +
+          'Çözüm: terminalde "python -m http.server 8000" komutunu çalıştırın, ' +
+          'ardından tarayıcıda http://localhost:8000 adresini açın.'
+        );
+      }
+
+      setLoading(false);
+    }
+
+    // ---- SONUÇLARI İŞLE VE GÖSTER --------------------------------
+    function renderResults(elements, key, value) {
+      clearResultMarkers();
+
+      // Kategori etiketi: okunabilir Türkçe isim
+      const categoryLabels = {
+        'amenity=cafe':        'Kafe',
+        'amenity=restaurant':  'Restoran',
+        'amenity=pharmacy':    'Eczane',
+        'shop=supermarket':    'Süpermarket',
+        'amenity=hospital':    'Hastane',
+        'amenity=bank':        'Banka',
+        'amenity=fuel':        'Benzin İstasyonu',
+        'amenity=school':      'Okul',
+        'amenity=dentist':     'Diş Hekimi',
+        'shop=bakery':         'Fırın',
+        'leisure=fitness_centre': 'Spor Salonu',
+        'amenity=bar':         'Bar',
+        'healthcare=psychotherapist': 'Psikolog / Psikoterapist',
+      };
+      const catLabel = categoryLabels[`${key}=${value}`] || value;
+
+      // Sonuç yoksa boş durum göster
+      if (!elements || elements.length === 0) {
+        tableScroll.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">🔍</div>
+            Bu bölgede <strong style="color:var(--text)">${catLabel}</strong> bulunamadı.<br>
+            Yarıçapı genişletmeyi veya farklı kategori seçmeyi deneyin.
+          </div>
+        `;
+        resultCount.textContent = '0';
+        resultCount.style.display = 'inline';
+        tableHint.textContent = 'Sonuç bulunamadı';
+        return;
+      }
+
+      // Tablo oluştur
+      let tableHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>İşletme Adı</th>
+              <th>Kategori</th>
+              <th>Açık Adres</th>
+              <th>İletişim</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      elements.forEach((el, i) => {
+        const tags = el.tags || {};
+
+        // Koordinatları al (node için direkt, way için center)
+        const lat = el.lat || (el.center && el.center.lat);
+        const lng = el.lon || (el.center && el.center.lon);
+
+        // İşletme adı — yoksa tür göster
+        const name = tags.name || tags['name:tr'] || `İsimsiz ${catLabel}`;
+
+        // Adres bilgisini birleştir
+        const addrParts = [
+          tags['addr:street'],
+          tags['addr:housenumber'],
+          tags['addr:neighbourhood'],
+          tags['addr:district'],
+          tags['addr:city']
+        ].filter(Boolean);
+        const address = addrParts.length > 0 ? addrParts.join(', ') : '—';
+
+        // İletişim bilgisi: telefon veya web sitesi
+        const phone   = tags.phone || tags['contact:phone'];
+        const website = tags.website || tags['contact:website'];
+        let contact = '—';
+        if (phone)   contact = `<a href="tel:${phone}" style="color:var(--accent);text-decoration:none">${phone}</a>`;
+        else if (website) contact = `<a href="${website}" target="_blank" style="color:var(--accent);text-decoration:none;font-size:0.75rem">🌐 Website</a>`;
+
+        // Tablo satırı — marker'a odaklanmak için data attr
+        tableHTML += `
+          <tr data-lat="${lat}" data-lng="${lng}" onclick="focusMarker(${lat},${lng},'${escapeStr(name)}','${catLabel}')">
+            <td class="muted">${i + 1}</td>
+            <td class="name">${name}</td>
+            <td class="category">${catLabel}</td>
+            <td class="muted">${address}</td>
+            <td>${contact}</td>
+          </tr>
+        `;
+
+        // Haritaya marker ekle (koordinat varsa)
+        if (lat && lng) {
+          const markerIcon = L.divIcon({
+            className: '',
+            html: `<div style="
+              width:10px;height:10px;
+              background:#00d4aa;
+              border-radius:50%;
+              border:2px solid white;
+              box-shadow:0 2px 6px rgba(0,0,0,0.5);
+            "></div>`,
+            iconSize: [10, 10],
+            iconAnchor: [5, 5]
+          });
+
+          const marker = L.marker([lat, lng], { icon: markerIcon })
+            .addTo(map)
+            .bindPopup(`
+              <div class="popup-name">${name}</div>
+              <div class="popup-type">${catLabel}</div>
+              ${address !== '—' ? `<div class="popup-addr">${address}</div>` : ''}
+            `);
+
+          resultMarkers.push(marker);
+        }
+      });
+
+      tableHTML += '</tbody></table>';
+      tableScroll.innerHTML = tableHTML;
+
+      // Sonuç sayacını güncelle
+      resultCount.textContent = elements.length;
+      resultCount.style.display = 'inline';
+      tableHint.textContent = `${elements.length} yer bulundu • Satıra tıklayarak haritada görün`;
+    }
+
+    // ---- MARKER'A ODAKLAN (tablo satırı tıklandığında) -----------
+    function focusMarker(lat, lng, name, cat) {
+      if (!lat || !lng || lat === 'null') return;
+      map.setView([lat, lng], 17, { animate: true });
+      // İlgili marker'ı bul ve popup aç
+      resultMarkers.forEach(m => {
+        const pos = m.getLatLng();
+        if (Math.abs(pos.lat - lat) < 0.0001 && Math.abs(pos.lng - lng) < 0.0001) {
+          m.openPopup();
+        }
+      });
+    }
+
+    // ---- YARDIMCI FONKSİYONLAR -----------------------------------
+
+    // Eski sonuç marker'larını haritadan temizle
+    function clearResultMarkers() {
+      resultMarkers.forEach(m => map.removeLayer(m));
+      resultMarkers = [];
+    }
+
+    // Yükleme durumunu aç/kapat
+    function setLoading(state) {
+      searchBtn.disabled = state;
+      searchBtn.classList.toggle('loading', state);
+    }
+
+    // Hata mesajını göster
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.add('visible');
+    }
+
+    // Hata mesajını gizle
+    function hideError() {
+      errorMsg.classList.remove('visible');
+    }
+
+    // XSS'e karşı string'i temizle (onclick içine yazılacak string için)
+    function escapeStr(str) {
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // ---- OLAY DİNLEYİCİLERİ --------------------------------------
+
+    // Arama butonu
+    searchBtn.addEventListener('click', fetchBusinesses);
+
+    // Klavye kısayolu: Enter tuşu
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !searchBtn.disabled) fetchBusinesses();
+    });
+
+    // ---- UYGULAMAYI BAŞLAT ----------------------------------------
+    initMap();
+
+    // file:// protokolü tespiti — uyarı banner'ını göster
+    if (window.location.protocol === 'file:') {
+      document.getElementById('cors-banner').style.display = 'block';
+    }
+
+  </script>
+</body>
+</html>
