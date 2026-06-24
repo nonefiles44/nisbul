@@ -277,6 +277,19 @@
     .leaflet-control-attribution { background: rgba(13,17,23,0.8) !important; color: var(--muted) !important; }
     .leaflet-control-attribution a { color: var(--accent) !important; }
 
+    /* Katman seçici dark tema */
+    .leaflet-control-layers {
+      background: var(--surface) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-sm) !important;
+      color: var(--text) !important;
+      font-family: var(--font-body) !important;
+      font-size: 0.8rem !important;
+    }
+    .leaflet-control-layers-expanded { padding: 8px 12px !important; }
+    .leaflet-control-layers label { color: var(--text) !important; display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer; }
+    .leaflet-control-layers-separator { border-color: var(--border) !important; }
+
     /* ===== ALT SONUÇ TABLOSU ===== */
     #table-section {
       grid-area: table;
@@ -400,7 +413,7 @@
   <header>
     <div class="logo-dot"></div>
     <h1>Niş<span>Bul</span></h1>
-    <p>OpenStreetMap · Overpass API</p>
+    <p>Google Maps · Overpass API</p>
   </header>
 
   <!-- file:// protokol uyarı banner'ı — JS ile gösterilir/gizlenir -->
@@ -478,7 +491,7 @@
     <!-- Panel alt bilgisi -->
     <div class="panel-footer">
       Haritaya tıklayarak merkez noktanızı seçin, sonra arama yapın.<br><br>
-      Veriler <a href="https://www.openstreetmap.org" target="_blank">OpenStreetMap</a> katkıcılarına aittir,
+      Harita © <a href="https://maps.google.com" target="_blank">Google Maps</a>. İşletme verileri
       <a href="https://overpass-api.de" target="_blank">Overpass API</a> üzerinden çekilmektedir.
     </div>
 
@@ -535,12 +548,35 @@
       // Harita: Türkiye / Ankara koordinatları, zoom 13
       map = L.map('map', { zoomControl: true }).setView([39.9334, 32.8597], 13);
 
-      // OpenStreetMap karanlık temalı tile katmanı (CartoDB Dark Matter)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıcıları &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20
-      }).addTo(map);
+      // Google Maps tile katmanları
+      const googleStreets = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        attribution: '© <a href="https://maps.google.com">Google Maps</a>',
+        subdomains: '0123',
+        maxZoom: 21
+      });
+
+      const googleHybrid = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: '© <a href="https://maps.google.com">Google Maps</a>',
+        subdomains: '0123',
+        maxZoom: 21
+      });
+
+      const googleSatellite = L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        attribution: '© <a href="https://maps.google.com">Google Maps</a>',
+        subdomains: '0123',
+        maxZoom: 21
+      });
+
+      // Varsayılan: Sokak görünümü
+      googleStreets.addTo(map);
+
+      // Katman seçici — sağ üst köşede
+      const baseMaps = {
+        '🗺️ Sokak': googleStreets,
+        '🛰️ Hibrit': googleHybrid,
+        '🌍 Uydu': googleSatellite,
+      };
+      L.control.layers(baseMaps, {}, { position: 'topright', collapsed: false }).addTo(map);
 
       // Harita tıklama olayı — merkez seç
       map.on('click', onMapClick);
